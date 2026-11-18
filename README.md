@@ -1,88 +1,119 @@
 # hotel-mcp
 
-A small hotel booking system with two front doors: a **web front desk** for staff and an **MCP server** so an AI assistant (Claude Desktop, Claude Code, Cursor…) can check availability and create or cancel bookings. Both use the same SQLite database, so a booking made by the assistant shows up on the front-desk screen within seconds, marked in purple.
+Un sistema de reservas de hotel muy sencillo con dos formas de usarlo:
 
-I built it to practise MCP with the official Python SDK, kept deliberately small: the MCP server is one short file of thin tools over the booking engine.
+- **Una web de recepción** para el personal del hotel.
+- **Un servidor MCP** para que un asistente de IA (Claude Desktop, Claude Code, Cursor…) pueda consultar disponibilidad, hacer reservas y cancelarlas hablando con él.
 
-```
-You:     Is there a double free next weekend?
-Claude:  ⏵ check_availability
-         Yes: room 202 from Friday to Sunday, 220 EUR. Shall I book it?
-You:     Yes, for Eva Ruiz, eva@example.com.
-Claude:  ⏵ create_booking (confirm=false) → "book room 202 for Eva Ruiz… 220 EUR?"
-         ⏵ create_booking (confirm=true)
-         Booked: locator K7Q2MZ, room 202, 220 EUR.
-```
-<sub>Illustrative conversation; the exact wording depends on the assistant.</sub>
+Los dos usan la misma base de datos, así que si le pides a Claude que reserve una habitación, la reserva aparece en la web a los pocos segundos (en morado).
 
-## How it fits together
+Lo hice para practicar MCP con el SDK oficial de Python, y lo he dejado pequeño a propósito.
+
+## Qué es MCP, en una frase
+
+MCP (Model Context Protocol) es un estándar para conectar asistentes de IA con sistemas externos. Tú escribes un "servidor MCP" que expone unas funciones, y cualquier asistente compatible puede usarlas sin integraciones a medida.
+
+## Cómo funciona
 
 ```
- Claude / Cursor / Claude Code            Browser
-          │ MCP (stdio or Streamable HTTP)    │ HTTP JSON
-          ▼                                   ▼
-   hotel/mcp_server.py                 hotel/web.py  +  static/index.html
-   5 tools · 1 resource · 1 prompt     FastAPI · availability grid · activity log
-          └──────────────┬────────────────────┘
-                         ▼
-                   hotel/core.py     booking rules, transactions, audit log
-                         ▼
-                      hotel.db       SQLite (created and seeded on first run)
+   Claude (Desktop / Code)              Navegador
+          │                                 │
+          │ MCP                             │ HTTP
+          ▼                                 ▼
+   hotel/mcp_server.py               hotel/web.py + static/index.html
+   (lo que puede hacer la IA)        (la web de recepción)
+          └────────────────┬────────────────┘
+                           ▼
+                     hotel/core.py   ← las reglas del hotel
+                           ▼
+                        hotel.db     ← base de datos SQLite
 ```
 
-## What the MCP server exposes
+1. **`core.py`** contiene toda la lógica: qué habitaciones están libres, cuánto cuesta una estancia, cómo se reserva, cómo se cancela y cuánto se devuelve. Guarda los datos en SQLite. La primera vez crea la base de datos con 6 habitaciones y unas reservas de ejemplo.
+2. **`mcp_server.py`** es el servidor MCP. Son unas pocas funciones que llaman a `core.py`. Cada función lleva el decorador `@mcp.tool()`, y con eso el SDK ya las publica para que Claude las vea y las use.
+3. **`web.py`** es la web de recepción, hecha con FastAPI. También llama a `core.py`.
 
-| | Name | What it does |
+Como el MCP y la web usan la misma lógica y la misma base de datos, siempre están sincronizados.
+
+## Qué puede hacer la IA
+
+| Tipo | Nombre | Qué hace |
 |---|---|---|
-| tool | `check_availability` | Rooms free for a stay that fit the party, cheapest first, plus today's date |
-| tool | `get_booking` | One booking by locator |
-| tool | `occupancy_report` | Who is staying, arriving and leaving on a day |
-| tool | `create_booking` | Books a room; needs `confirm=true` (see below) |
-| tool | `cancel_booking` | Cancels a booking; needs `confirm=true` |
-| resource | `hotel://policies` | Cancellation and stay rules |
-| prompt | `front_desk_briefing` | Morning summary of arrivals and departures |
+| tool | `check_availability` | Habitaciones libres para unas fechas y número de personas, con el precio. También dice qué día es hoy |
+| tool | `get_booking` | Muestra una reserva a partir de su localizador (por ejemplo ABC123) |
+| tool | `occupancy_report` | Quién está alojado, quién llega y quién se va un día concreto |
+| tool | `create_booking` | Hace una reserva (pide confirmación antes) |
+| tool | `cancel_booking` | Cancela una reserva (pide confirmación antes) |
+| resource | `hotel://policies` | Las normas de cancelación del hotel |
+| prompt | `front_desk_briefing` | Plantilla para pedir el resumen del día en recepción |
 
-## A few decisions
+- Las **tools** son acciones que la IA decide usar.
+- Los **resources** son información que se puede leer.
+- Los **prompts** son plantillas que elige el usuario.
 
-- **The user confirms, not the model.** Writing tools first return a question with the price or refund ("Ask the user: …") and only act when called again with `confirm=true`. The tool description tells the model to do that only after the user says yes.
-- **The rules live in one place.** `core.py` holds availability, pricing, the 48 h cancellation policy and the audit log; the MCP tools and the web API are thin layers over it.
-- **No double bookings.** Availability is checked and the booking written inside one `BEGIN IMMEDIATE` SQLite transaction, so the web and the assistant cannot take the same room at once.
-- **Errors the model can act on.** Broken rules raise with a message saying what to do ("Room 102 is not free … Use check_availability"); the SDK returns them as tool errors (`isError`).
-- **The model is told the date.** It does not know what day it is, so `check_availability` returns `today` and relative requests like "next weekend" resolve correctly.
+## Ejemplo de conversación
 
-## Run it
+```
+Tú:      ¿Hay una doble libre el fin de semana que viene?
+Claude:  (usa check_availability)
+         Sí, la 202, de viernes a domingo, 220 €. ¿La reservo?
+Tú:      Sí, a nombre de Eva Ruiz, eva@example.com.
+Claude:  (usa create_booking sin confirmar → le devuelve la pregunta con el precio)
+         (usa create_booking con confirm=true)
+         Hecho: localizador K7Q2MZ, habitación 202, 220 €.
+```
+<sub>Ejemplo orientativo: las palabras exactas dependen del asistente.</sub>
 
-Requires Python 3.10+.
+## Decisiones sencillas pero importantes
+
+- **Quien confirma es el usuario, no la IA.** Reservar y cancelar se hace en dos pasos. La primera llamada solo devuelve la pregunta con el precio o el reembolso. La reserva o cancelación solo se ejecuta si la IA vuelve a llamar con `confirm=true`, y la descripción de la tool le indica que lo haga únicamente cuando el usuario diga que sí.
+- **No se puede reservar dos veces la misma habitación.** La comprobación de disponibilidad y la reserva van dentro de una misma transacción, así que aunque la web y la IA reserven a la vez, solo una lo consigue.
+- **Errores claros.** Si algo no se puede hacer, el mensaje explica qué pasa y qué hacer ("La habitación 102 no está libre… usa check_availability"). La IA lo lee y se corrige sola.
+- **La IA sabe qué día es.** Un modelo no sabe la fecha de hoy, así que `check_availability` se la devuelve. Así entiende bien "el fin de semana que viene".
+
+## Cómo arrancarlo
+
+Necesitas Python 3.10 o superior.
 
 ```bash
 git clone https://github.com/ianfloresfdez/hotel-mcp
 cd hotel-mcp
 python -m venv .venv
-.venv/Scripts/activate        # Windows  (source .venv/bin/activate on macOS/Linux)
+.venv\Scripts\activate          # en Windows  (en macOS/Linux: source .venv/bin/activate)
 pip install -e ".[dev]"
 ```
 
-**Front desk:** `hotel-web`, then open http://127.0.0.1:8850
+**Web de recepción:** ejecuta `hotel-web` y abre http://127.0.0.1:8850
 
-**Claude Desktop:** add this to `claude_desktop_config.json` and restart Claude:
+**Conectarlo a Claude Desktop:** en Claude Desktop ve a *Settings → Developer → Edit Config*, añade esto y reinicia Claude:
 
 ```json
 {
   "mcpServers": {
     "hotel": {
-      "command": "C:/path/to/hotel-mcp/.venv/Scripts/hotel-mcp.exe"
+      "command": "C:/ruta/a/hotel-mcp/.venv/Scripts/hotel-mcp.exe"
     }
   }
 }
 ```
 
-On macOS/Linux the command is `/path/to/hotel-mcp/.venv/bin/hotel-mcp`.
+En macOS/Linux la ruta es `/ruta/a/hotel-mcp/.venv/bin/hotel-mcp`.
 
-**Claude Code:** `claude mcp add hotel -- /path/to/hotel-mcp/.venv/Scripts/hotel-mcp.exe`
+No hace falta arrancar el servidor MCP a mano: Claude lo lanza solo cuando lo necesita.
 
-**MCP Inspector:** `npx @modelcontextprotocol/inspector .venv/Scripts/hotel-mcp.exe`
+**Conectarlo a Claude Code:**
 
-**Streamable HTTP:** `hotel-mcp --http` serves http://127.0.0.1:8851/mcp. It has no authentication: keep it on localhost.
+```bash
+claude mcp add hotel -- C:/ruta/a/hotel-mcp/.venv/Scripts/hotel-mcp.exe
+```
+
+**Probarlo sin Claude** (con el MCP Inspector, una herramienta oficial para llamar a cada tool a mano):
+
+```bash
+npx @modelcontextprotocol/inspector .venv/Scripts/hotel-mcp.exe
+```
+
+Consejo: deja la web abierta mientras hablas con Claude y verás aparecer sus reservas.
 
 ## Tests
 
@@ -90,15 +121,17 @@ On macOS/Linux the command is `/path/to/hotel-mcp/.venv/bin/hotel-mcp`.
 pytest
 ```
 
-19 tests: the booking rules in `core.py` (overlaps, capacity, idempotency, validation messages, cancellation terms, audit) and the MCP server driven through a real client session in memory.
+Hay 19 tests. Unos prueban las reglas del hotel (solapamiento de fechas, capacidad, cancelaciones…). Otros hablan con el servidor MCP como lo haría Claude.
 
-## What I would add next
+## Qué añadiría para usarlo de verdad
 
-- **Elicitation** for confirmations, so the client shows a confirm dialog instead of relying on the model to ask.
-- **OAuth 2.1** on the HTTP transport, and per-user authorisation so a guest only sees their own bookings.
-- Treat guest-written text (special requests) as untrusted data when it is returned to the model.
-- Postgres, rate limiting and tracing per tool call.
+Es un proyecto de práctica. Para producción añadiría:
 
-## License
+- **Confirmación con elicitation:** que el propio cliente muestre un botón de "Confirmar", en vez de depender de que la IA pregunte.
+- **Autenticación (OAuth 2.1)** si se usa en remoto, y que cada cliente solo pueda ver sus propias reservas.
+- **Tratar con cuidado el texto que escriben los huéspedes** (por ejemplo, las peticiones especiales), porque podría contener instrucciones dirigidas a la IA (*prompt injection*).
+- Una base de datos como PostgreSQL, límites de uso y registro de cada acción de la IA.
+
+## Licencia
 
 MIT
