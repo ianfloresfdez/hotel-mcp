@@ -42,8 +42,8 @@ Como el MCP y la web usan la misma lógica y la misma base de datos, siempre est
 | tool | `check_availability` | Habitaciones libres para unas fechas y número de personas, con el precio. También dice qué día es hoy |
 | tool | `get_booking` | Muestra una reserva a partir de su localizador (por ejemplo ABC123) |
 | tool | `occupancy_report` | Quién está alojado, quién llega y quién se va un día concreto |
-| tool | `create_booking` | Hace una reserva (pide confirmación antes) |
-| tool | `cancel_booking` | Cancela una reserva (pide confirmación antes) |
+| tool | `create_booking` | Hace una reserva (en dos pasos, con código de confirmación) |
+| tool | `cancel_booking` | Cancela una reserva (en dos pasos, con código de confirmación) |
 | resource | `hotel://policies` | Las normas de cancelación del hotel |
 | prompt | `front_desk_briefing` | Plantilla para pedir el resumen del día en recepción |
 
@@ -58,18 +58,31 @@ Tú:      ¿Hay una doble libre el fin de semana que viene?
 Claude:  (usa check_availability)
          Sí, la 202, de viernes a domingo, 220 €. ¿La reservo?
 Tú:      Sí, a nombre de Eva Ruiz, eva@example.com.
-Claude:  (usa create_booking sin confirmar → le devuelve la pregunta con el precio)
-         (usa create_booking con confirm=true)
+Claude:  (usa create_booking sin código → recibe el precio y un código, p. ej. 3f9a1c2e)
+         (usa create_booking con confirmation_code=3f9a1c2e)
          Hecho: localizador K7Q2MZ, habitación 202, 220 €.
 ```
 <sub>Ejemplo orientativo: las palabras exactas dependen del asistente.</sub>
 
 ## Decisiones sencillas pero importantes
 
-- **Quien confirma es el usuario, no la IA.** Reservar y cancelar se hace en dos pasos. La primera llamada solo devuelve la pregunta con el precio o el reembolso. La reserva o cancelación solo se ejecuta si la IA vuelve a llamar con `confirm=true`, y la descripción de la tool le indica que lo haga únicamente cuando el usuario diga que sí.
 - **No se puede reservar dos veces la misma habitación.** La comprobación de disponibilidad y la reserva van dentro de una misma transacción, así que aunque la web y la IA reserven a la vez, solo una lo consigue.
 - **Errores claros.** Si algo no se puede hacer, el mensaje explica qué pasa y qué hacer ("La habitación 102 no está libre… usa check_availability"). La IA lo lee y se corrige sola.
 - **La IA sabe qué día es.** Un modelo no sabe la fecha de hoy, así que `check_availability` se la devuelve. Así entiende bien "el fin de semana que viene".
+
+## Seguridad
+
+Son cinco medidas pequeñas, todas en `mcp_server.py`:
+
+1. **Validar la entrada.** Cada parámetro tiene un tipo con reglas: el localizador son 6 letras o números, las fechas tienen formato `YYYY-MM-DD`, máximo 4 personas, el email tiene que parecer un email. Si el modelo manda otra cosa, la llamada se rechaza antes de tocar la base de datos. Además, todas las consultas SQL usan parámetros, nunca texto pegado.
+2. **Confirmación con código.** Reservar y cancelar se hace en dos pasos. La primera llamada no cambia nada: devuelve el precio (o el reembolso) y un código. La acción solo se ejecuta si la IA vuelve a llamar con ese código. El código está firmado (HMAC) con los datos exactos, así que la IA no se lo puede inventar ni usarlo para reservar otra habitación u otras fechas distintas de las que vio el usuario.
+3. **Sin reservas duplicadas por reintentos.** Ese mismo código sirve de *idempotency key*: si la IA repite la llamada (por un timeout, por ejemplo), devuelve la misma reserva en vez de crear otra.
+4. **Límite de cambios.** Como mucho 5 reservas o cancelaciones por minuto. Si el agente entra en bucle, se para.
+5. **La IA solo ve lo que necesita.** Los emails de los clientes le llegan enmascarados (`a***@example.com`) y los campos internos no salen.
+
+Además, cada tool indica si **solo lee** o **cambia datos** (las *annotations* de MCP), para que el cliente pueda pedir permiso antes de las que cambian cosas. Las notas que escriben los huéspedes se marcan como datos, no como instrucciones. Todo lo que hace la IA queda registrado en la base de datos (tabla `audit`) y se ve en la web. El modo HTTP solo escucha en `127.0.0.1`.
+
+**Lo que no resuelve:** la IA podría pedir el código y usarlo sin preguntar al usuario. Para que el "sí" lo dé la persona de verdad, en producción usaría *elicitation*: el cliente muestra un botón de confirmar que el modelo no puede pulsar.
 
 ## Cómo arrancarlo
 
@@ -121,13 +134,14 @@ Consejo: deja la web abierta mientras hablas con Claude y verás aparecer sus re
 pytest
 ```
 
-Hay 19 tests. Unos prueban las reglas del hotel (solapamiento de fechas, capacidad, cancelaciones…). Otros hablan con el servidor MCP como lo haría Claude.
+Hay 25 tests. Unos prueban las reglas del hotel (solapamiento de fechas, capacidad, cancelaciones…). Otros hablan con el servidor MCP como lo haría Claude, incluidas las medidas de seguridad (código inventado, datos cambiados, reintentos, entrada inválida, emails, límite de cambios).
 
 ## Qué añadiría para usarlo de verdad
 
 Es un proyecto de práctica. Para producción añadiría:
 
 - **Confirmación con elicitation:** que el propio cliente muestre un botón de "Confirmar", en vez de depender de que la IA pregunte.
+- Un límite de cambios por usuario y guardado fuera del proceso (por ejemplo en Redis), no en memoria.
 - **Autenticación (OAuth 2.1)** si se usa en remoto, y que cada cliente solo pueda ver sus propias reservas.
 - Una base de datos como PostgreSQL, límites de uso y registro de cada acción de la IA.
 
