@@ -94,3 +94,14 @@ async def test_create_booking_with_confirmation_and_idempotency():
         again = data(await s.call_tool("create_booking", args))
         assert first["status"] == "confirmed" and first["total"] == 240.0
         assert again["locator"] == first["locator"] and again["idempotent_replay"]
+
+
+@pytest.mark.anyio
+async def test_read_tools_tell_the_model_what_day_it_is():
+    async with create_connected_server_and_client_session(mcp) as s:
+        init_today = date.today().isoformat()
+        for name, args in [("check_availability", {"check_in": d(1), "check_out": d(2)}),
+                           ("get_booking", {"locator": "ABC123"}),
+                           ("find_bookings", {"date": d(0)}),
+                           ("occupancy_report", {})]:
+            assert init_today in data(await s.call_tool(name, args))["today"], name

@@ -116,7 +116,9 @@ input,select,textarea{font:13px var(--sans);padding:7px 9px;border:1px solid var
 <script>
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const iso = d => d.toISOString().slice(0, 10);
+// Local calendar date as YYYY-MM-DD. Not toISOString(): that converts to UTC, and local midnight
+// in Madrid (UTC+1) is still the previous day in UTC, which shifted every booking one column.
+const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
 const SUSPICIOUS = /ignore (all |your |previous )?instructions|ai assistant|system prompt/i;
 

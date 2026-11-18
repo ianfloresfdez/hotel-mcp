@@ -111,7 +111,7 @@ Keep the front desk open while you talk to the assistant: its changes appear the
 pytest
 ```
 
-20 tests. The core tests cover overlap rules, capacity, idempotency, validation messages, cancellation terms and the audit log. The MCP tests drive the server through a real client session in memory: tool and resource listing, argument validation, the injection guard, confirmation with and without elicitation, and idempotent booking.
+21 tests. The core tests cover overlap rules, capacity, idempotency, validation messages, cancellation terms and the audit log. The MCP tests drive the server through a real client session in memory: tool and resource listing, argument validation, the injection guard, confirmation with and without elicitation, idempotent booking, and that read tools tell the model today's date.
 
 ## Before this goes near real guests
 
