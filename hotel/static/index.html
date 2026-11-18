@@ -7,12 +7,12 @@
 <style>
 :root{
   --bg:#f5f4f0; --panel:#fff; --ink:#1f1e1b; --muted:#6c6a63; --line:#e1ded6; --soft:#efede7;
-  --accent:#1f6f5c; --accent-ink:#fff; --busy:#2f6fd0; --busy-ai:#8a4fd1; --free:#eef6f1; --err:#b8382e; --warn:#a46a10;
+  --accent:#1f6f5c; --accent-ink:#fff; --busy:#2f6fd0; --busy-ai:#8a4fd1; --free:#eef6f1; --err:#b8382e;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; --mono: ui-monospace, Consolas, monospace;
 }
 @media (prefers-color-scheme: dark){
   :root{ --bg:#141513; --panel:#1d1e1b; --ink:#ecebe5; --muted:#a2a097; --line:#33342f; --soft:#262723;
-         --accent:#3fb592; --accent-ink:#08130f; --busy:#5b93ee; --busy-ai:#b083ef; --free:#1c2a23; --err:#f0796f; --warn:#e2a64a; }
+         --accent:#3fb592; --accent-ink:#08130f; --busy:#5b93ee; --busy-ai:#b083ef; --free:#1c2a23; --err:#f0796f; }
 }
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 var(--sans)}
@@ -50,7 +50,6 @@ table.list{border-collapse:collapse;width:100%;font-size:13px}
 .tag{display:inline-block;font-size:11px;border-radius:4px;padding:0 6px;border:1px solid var(--line);color:var(--muted)}
 .tag.mcp{border-color:var(--busy-ai);color:var(--busy-ai)}
 .req{font-size:12px;color:var(--muted);max-width:280px}
-.req.warn{color:var(--warn)}
 form{display:grid;gap:8px}
 label{font-size:12px;color:var(--muted);display:grid;gap:3px}
 input,select,textarea{font:13px var(--sans);padding:7px 9px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--ink);width:100%}
@@ -120,7 +119,6 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;
 // in Madrid (UTC+1) is still the previous day in UTC, which shifted every booking one column.
 const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
-const SUSPICIOUS = /ignore (all |your |previous )?instructions|ai assistant|system prompt/i;
 
 async function api(path, opts = {}) {
   const r = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...opts });
@@ -169,12 +167,11 @@ function renderList() {
   const rows = [...bookings].sort((a, b) => a.check_in.localeCompare(b.check_in));
   $('#list').innerHTML = '<tr><th>Locator</th><th>Guest</th><th>Room</th><th>Dates</th><th>Total</th><th>Requests</th><th>From</th><th></th></tr>' +
     rows.map(b => {
-      const warn = SUSPICIOUS.test(b.special_requests);
       return `<tr class="${b.status}">
         <td class="loc">${b.locator}</td><td>${esc(b.guest_name)}<br><span class="tag">${b.guests} guest(s)</span></td>
         <td>${b.room_id}</td><td>${b.check_in} → ${b.check_out}</td>
         <td>${b.total.toFixed(0)} €${b.status === 'cancelled' ? `<br><span class="tag">refund ${(b.refund ?? 0).toFixed(0)} €</span>` : ''}</td>
-        <td class="req ${warn ? 'warn' : ''}">${warn ? '⚠ looks like a prompt injection: ' : ''}${esc(b.special_requests)}</td>
+        <td class="req">${esc(b.special_requests)}</td>
         <td><span class="tag ${b.source === 'mcp' ? 'mcp' : ''}">${b.source}</span></td>
         <td>${b.status === 'confirmed' ? `<button data-cancel="${b.locator}">Cancel</button>` : 'cancelled'}</td></tr>`;
     }).join('');

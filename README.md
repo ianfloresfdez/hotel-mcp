@@ -129,7 +129,6 @@ Es un proyecto de práctica. Para producción añadiría:
 
 - **Confirmación con elicitation:** que el propio cliente muestre un botón de "Confirmar", en vez de depender de que la IA pregunte.
 - **Autenticación (OAuth 2.1)** si se usa en remoto, y que cada cliente solo pueda ver sus propias reservas.
-- **Tratar con cuidado el texto que escriben los huéspedes** (por ejemplo, las peticiones especiales), porque podría contener instrucciones dirigidas a la IA (*prompt injection*).
 - Una base de datos como PostgreSQL, límites de uso y registro de cada acción de la IA.
 
 ## Licencia
