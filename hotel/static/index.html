@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hotel Front Desk</title>
+<style>
+:root{
+  --bg:#f5f4f0; --panel:#fff; --ink:#1f1e1b; --muted:#6c6a63; --line:#e1ded6; --soft:#efede7;
+  --accent:#1f6f5c; --accent-ink:#fff; --busy:#2f6fd0; --busy-ai:#8a4fd1; --free:#eef6f1; --err:#b8382e; --warn:#a46a10;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; --mono: ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#141513; --panel:#1d1e1b; --ink:#ecebe5; --muted:#a2a097; --line:#33342f; --soft:#262723;
+         --accent:#3fb592; --accent-ink:#08130f; --busy:#5b93ee; --busy-ai:#b083ef; --free:#1c2a23; --err:#f0796f; --warn:#e2a64a; }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 var(--sans)}
+header{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:14px 22px;background:var(--panel);border-bottom:1px solid var(--line)}
+header h1{font-size:18px;margin:0}
+header .sub{color:var(--muted);font-size:13px}
+header .sp{flex:1}
+button{font:600 13px var(--sans);border-radius:8px;padding:7px 12px;cursor:pointer;border:1px solid var(--line);background:var(--panel);color:var(--ink)}
+button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+button.danger{color:var(--err)}
+main{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:18px;padding:18px 22px 40px;max-width:1400px;margin:0 auto}
+section{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px;min-width:0}
+h2{font-size:14px;margin:0 0 10px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px}
+.kpi{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 14px}
+.kpi b{display:block;font-size:22px}
+.kpi span{color:var(--muted);font-size:12px}
+.gridwrap{overflow-x:auto}
+table.cal{border-collapse:separate;border-spacing:3px;min-width:720px;width:100%}
+.cal th{font-size:11px;color:var(--muted);font-weight:600;text-align:center;padding:2px}
+.cal th.room{text-align:left;width:86px}
+.cal th.today{color:var(--accent)}
+.cal td{height:30px;border-radius:5px;background:var(--free);font-size:11px;text-align:center;cursor:default;white-space:nowrap;overflow:hidden}
+.cal td.busy{background:var(--busy);color:#fff;font-weight:600;cursor:pointer}
+.cal td.ai{background:var(--busy-ai)}
+.cal td.room{background:none;text-align:left;font-weight:600;font-size:12px}
+.legend{display:flex;gap:14px;font-size:12px;color:var(--muted);margin-top:8px;flex-wrap:wrap}
+.legend i{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:-2px;margin-right:5px}
+table.list{border-collapse:collapse;width:100%;font-size:13px}
+.list th,.list td{border-bottom:1px solid var(--line);padding:7px 6px;text-align:left;vertical-align:top}
+.list th{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.list tr.cancelled td{color:var(--muted);text-decoration:line-through}
+.list tr.cancelled td:last-child{text-decoration:none}
+.loc{font-family:var(--mono);font-weight:600}
+.tag{display:inline-block;font-size:11px;border-radius:4px;padding:0 6px;border:1px solid var(--line);color:var(--muted)}
+.tag.mcp{border-color:var(--busy-ai);color:var(--busy-ai)}
+.req{font-size:12px;color:var(--muted);max-width:280px}
+.req.warn{color:var(--warn)}
+form{display:grid;gap:8px}
+label{font-size:12px;color:var(--muted);display:grid;gap:3px}
+input,select,textarea{font:13px var(--sans);padding:7px 9px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--ink);width:100%}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.msg{font-size:13px;min-height:20px}
+.msg.err{color:var(--err)} .msg.ok{color:var(--accent)}
+.audit{list-style:none;margin:0;padding:0;font-size:12px;max-height:340px;overflow:auto}
+.audit li{padding:6px 0;border-bottom:1px solid var(--line)}
+.audit .t{color:var(--muted);font-family:var(--mono)}
+.stack{display:grid;gap:18px;align-content:start}
+.full{grid-column:1 / -1}
+@media (max-width: 980px){ main{grid-template-columns:1fr;padding:14px 16px} .kpis{grid-template-columns:repeat(2,1fr)} }
+</style>
+</head>
+<body>
+<header>
+  <h1>🏨 Hotel Front Desk</h1>
+  <span class="sub">Bookings made from the web and from an AI assistant through MCP share the same database. Updates every 3 s.</span>
+  <span class="sp"></span>
+  <button id="reset" class="danger" title="Delete everything and restore the demo data">Reset demo data</button>
+</header>
+
+<main>
+  <div class="stack">
+    <div class="kpis" id="kpis"></div>
+    <section>
+      <h2>Next 14 nights</h2>
+      <div class="gridwrap"><table class="cal" id="cal"></table></div>
+      <div class="legend"><span><i style="background:var(--free)"></i>free</span><span><i style="background:var(--busy)"></i>booked at the desk</span><span><i style="background:var(--busy-ai)"></i>booked through MCP</span><span>Click a booking to cancel it.</span></div>
+    </section>
+    <section>
+      <h2>Bookings</h2>
+      <div class="gridwrap"><table class="list" id="list"></table></div>
+    </section>
+  </div>
+
+  <div class="stack">
+    <section>
+      <h2>New booking</h2>
+      <form id="form">
+        <div class="row2">
+          <label>Check-in<input type="date" name="check_in" required></label>
+          <label>Check-out<input type="date" name="check_out" required></label>
+        </div>
+        <div class="row2">
+          <label>Guests<input type="number" name="guests" min="1" max="4" value="2" required></label>
+          <label>Room<select name="room_id" id="roomSel"><option value="">check dates…</option></select></label>
+        </div>
+        <label>Guest name<input name="guest_name" required maxlength="80"></label>
+        <label>Email<input name="guest_email" type="email" required maxlength="120"></label>
+        <label>Special requests<textarea name="special_requests" rows="2" maxlength="500"></textarea></label>
+        <button class="primary" type="submit">Book</button>
+        <div class="msg" id="msg"></div>
+      </form>
+    </section>
+    <section>
+      <h2>Activity log</h2>
+      <ul class="audit" id="audit"></ul>
+    </section>
+  </div>
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const iso = d => d.toISOString().slice(0, 10);
+const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+const SUSPICIOUS = /ignore (all |your |previous )?instructions|ai assistant|system prompt/i;
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...opts });
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(body.detail ? (typeof body.detail === 'string' ? body.detail : body.detail.map(d => d.msg).join('; ')) : `HTTP ${r.status}`);
+  return body;
+}
+
+let rooms = [], bookings = [];
+
+async function refresh() {
+  try {
+    [rooms, bookings] = await Promise.all([api('/api/rooms'), api('/api/bookings')]);
+    const [occ, audit] = await Promise.all([api('/api/occupancy'), api('/api/audit?limit=25')]);
+    renderKpis(occ); renderCal(); renderList(); renderAudit(audit);
+  } catch (e) { $('#msg').className = 'msg err'; $('#msg').textContent = 'Server not reachable: ' + e.message; }
+}
+
+function renderKpis(o) {
+  $('#kpis').innerHTML = [
+    [`${o.occupancy_pct}%`, `occupancy tonight (${o.rooms_occupied}/${o.rooms_total})`],
+    [o.arrivals.length, 'arrivals today'],
+    [o.departures.length, 'departures today'],
+    [bookings.filter(b => b.status === 'confirmed').length, 'confirmed bookings'],
+  ].map(([v, l]) => `<div class="kpi"><b>${v}</b><span>${l}</span></div>`).join('');
+}
+
+function renderCal() {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const days = [...Array(14)].map((_, i) => addDays(today, i));
+  let h = '<tr><th class="room">Room</th>' + days.map((d, i) =>
+    `<th class="${i === 0 ? 'today' : ''}">${d.toLocaleDateString('en-GB', { weekday: 'short' })}<br>${d.getDate()}</th>`).join('') + '</tr>';
+  for (const r of rooms) {
+    h += `<tr><td class="room">${r.id}<br><span class="tag">${r.type} · ${r.price}€</span></td>`;
+    for (const d of days) {
+      const ds = iso(d);
+      const b = bookings.find(x => x.status === 'confirmed' && x.room_id === r.id && x.check_in <= ds && x.check_out > ds);
+      h += b ? `<td class="busy ${b.source === 'mcp' ? 'ai' : ''}" data-loc="${b.locator}" title="${esc(b.guest_name)} · ${b.locator}">${b.check_in === ds ? esc(b.guest_name.split(' ')[0]) : ''}</td>` : '<td></td>';
+    }
+    h += '</tr>';
+  }
+  $('#cal').innerHTML = h;
+}
+
+function renderList() {
+  const rows = [...bookings].sort((a, b) => a.check_in.localeCompare(b.check_in));
+  $('#list').innerHTML = '<tr><th>Locator</th><th>Guest</th><th>Room</th><th>Dates</th><th>Total</th><th>Requests</th><th>From</th><th></th></tr>' +
+    rows.map(b => {
+      const warn = SUSPICIOUS.test(b.special_requests);
+      return `<tr class="${b.status}">
+        <td class="loc">${b.locator}</td><td>${esc(b.guest_name)}<br><span class="tag">${b.guests} guest(s)</span></td>
+        <td>${b.room_id}</td><td>${b.check_in} → ${b.check_out}</td>
+        <td>${b.total.toFixed(0)} €${b.status === 'cancelled' ? `<br><span class="tag">refund ${(b.refund ?? 0).toFixed(0)} €</span>` : ''}</td>
+        <td class="req ${warn ? 'warn' : ''}">${warn ? '⚠ looks like a prompt injection: ' : ''}${esc(b.special_requests)}</td>
+        <td><span class="tag ${b.source === 'mcp' ? 'mcp' : ''}">${b.source}</span></td>
+        <td>${b.status === 'confirmed' ? `<button data-cancel="${b.locator}">Cancel</button>` : 'cancelled'}</td></tr>`;
+    }).join('');
+}
+
+function renderAudit(items) {
+  $('#audit').innerHTML = items.length ? items.map(a =>
+    `<li><span class="t">${a.at.slice(5, 16).replace('T', ' ')}</span> <span class="tag ${a.source === 'mcp' ? 'mcp' : ''}">${a.source}</span> <b>${a.action}</b><br>${esc(a.detail)}</li>`).join('')
+    : '<li>No activity yet. Book or cancel something here, or ask your AI assistant.</li>';
+}
+
+async function cancel(loc) {
+  const b = bookings.find(x => x.locator === loc);
+  const reason = prompt(`Cancel ${loc} (${b ? b.guest_name : ''})? Reason:`, 'Guest request');
+  if (!reason) return;
+  try { await api(`/api/bookings/${loc}/cancel`, { method: 'POST', body: JSON.stringify({ reason }) }); refresh(); }
+  catch (e) { alert(e.message); }
+}
+document.addEventListener('click', e => {
+  const c = e.target.closest('[data-cancel]'); if (c) return cancel(c.dataset.cancel);
+  const cell = e.target.closest('td[data-loc]'); if (cell) return cancel(cell.dataset.loc);
+});
+
+async function loadRooms() {
+  const f = $('#form');
+  const ci = f.check_in.value, co = f.check_out.value, g = f.guests.value || 1;
+  const sel = $('#roomSel');
+  if (!ci || !co) { sel.innerHTML = '<option value="">check dates…</option>'; return; }
+  try {
+    const free = await api(`/api/availability?check_in=${ci}&check_out=${co}&guests=${g}`);
+    sel.innerHTML = free.length ? free.map(r => `<option value="${r.id}">${r.id} · ${r.type} · ${r.total.toFixed(0)} €</option>`).join('')
+                                : '<option value="">no rooms free</option>';
+    $('#msg').textContent = '';
+  } catch (e) { sel.innerHTML = '<option value="">—</option>'; $('#msg').className = 'msg err'; $('#msg').textContent = e.message; }
+}
+['check_in', 'check_out', 'guests'].forEach(n => $('#form')[n].addEventListener('change', loadRooms));
+
+$('#form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const f = e.target, data = Object.fromEntries(new FormData(f));
+  data.guests = +data.guests;
+  try {
+    const b = await api('/api/bookings', { method: 'POST', body: JSON.stringify(data) });
+    $('#msg').className = 'msg ok'; $('#msg').textContent = `Booked: ${b.locator}, room ${b.room_id}, ${b.total.toFixed(0)} €`;
+    f.guest_name.value = ''; f.guest_email.value = ''; f.special_requests.value = '';
+    refresh(); loadRooms();
+  } catch (err) { $('#msg').className = 'msg err'; $('#msg').textContent = err.message; }
+});
+
+$('#reset').onclick = async () => {
+  if (!confirm('Delete all bookings and restore the demo data?')) return;
+  await api('/api/reset', { method: 'POST' }); refresh();
+};
+
+const t = new Date();
+$('#form').check_in.value = iso(addDays(t, 10));
+$('#form').check_out.value = iso(addDays(t, 12));
+loadRooms(); refresh(); setInterval(refresh, 3000);
+</script>
+</body>
+</html>
